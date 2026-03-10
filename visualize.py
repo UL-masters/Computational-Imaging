@@ -67,7 +67,7 @@ def reconstruct_volume(phantom):
 
 def main():
 
-    # change the phantom number to visualize different phantoms (0-110)
+    # change the phantom number to visualize different phantoms (000-110)
     phantom, phantom_number = load_phantom("phantoms/phantom_001.npy")
 
     show_slice(phantom, f"Original Phantom {phantom_number}")
