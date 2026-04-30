@@ -104,7 +104,7 @@ def plot_reconstruction_grid(phantom: np.ndarray, results: dict, phantom_number:
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-# run the full experiment pipeline for a given phantom: compute sinograms for all conditions, reconstruct with FBP and SIRT, compute RMSE, and generate figures
+# full experiment pipeline for phantom: compute sinograms for all conditions, reconstruct with FBP and SIRT, compute RMSE, and generate figures
 # Conditions tested (6 total):
 # - many_angles + no_noise
 # - many_angles + high_noise
