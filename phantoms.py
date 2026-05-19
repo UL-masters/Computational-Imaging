@@ -1,73 +1,10 @@
-# import numpy as np
-# from scipy.ndimage import gaussian_filter
-# import os
-
-# def generate_phantom(volume_size=(128, 128, 128), num_stones=0, base_att=0.1, stone_att=0.5):
-    
-#     # coordinate grid centered at origin
-#     half_size = np.array(volume_size) / 2
-#     x, y, z = np.ogrid[-half_size[0]:half_size[0], -half_size[1]:half_size[1], -half_size[2]:half_size[2]]
-    
-#     # deformed ellipsoid with random scaling
-#     scale_factors = np.random.uniform(0.8, 1.2, 3)
-#     a, b, c = half_size * scale_factors
-#     base_mask = (x**2 / a**2 + y**2 / b**2 + z**2 / c**2 <= 1)
-    
-#     # Gaussian noise and smoothing
-#     base = base_mask.astype(float) * base_att
-#     noise = np.random.normal(0, 0.05, volume_size)
-#     base += noise * base_mask
-#     base = gaussian_filter(base, sigma=2)
-    
-#     base = (base > 0.05).astype(float) * base_att
-    
-#     # add stones
-#     stones = np.zeros(volume_size)
-#     for _ in range(num_stones):
-#         # random position inside base
-#         while True:
-#             px = np.random.uniform(-a * 0.9, a * 0.9)
-#             py = np.random.uniform(-b * 0.9, b * 0.9)
-#             pz = np.random.uniform(-c * 0.9, c * 0.9)
-#             if (px**2 / a**2 + py**2 / b**2 + pz**2 / c**2 < 0.8):
-#                 break
-        
-#         # stone - small ellipsoid with random size (5-15 voxels radius)
-#         sa, sb, sc = np.random.uniform(5, 15, 3)
-#         stone_mask = ((x - px)**2 / sa**2 + (y - py)**2 / sb**2 + (z - pz)**2 / sc**2 <= 1)
-#         stones += stone_mask.astype(float) * stone_att
-    
-#     phantom = base + stones
-#     return phantom
-
-# def generate_all_phantoms(output_dir='phantoms', volume_size=(128, 128, 128)):
-   
-#     if not os.path.exists(output_dir):
-#         os.makedirs(output_dir)
-    
-#     # 3 with 3 stones, 35 with 2, 62 with 1, 11 with 0
-#     num_stones_list = [3] * 3 + [2] * 35 + [1] * 62 + [0] * 11
-#     np.random.shuffle(num_stones_list)  # for randomness
-    
-#     for i, num_stones in enumerate(num_stones_list):
-#         phantom = generate_phantom(volume_size, num_stones)
-#         np.save(os.path.join(output_dir, f'phantom_{i:03d}.npy'), phantom)
-#         print(f'Generated phantom {i:03d} with {num_stones} stones')
-
-# if __name__ == '__main__':
-#     generate_all_phantoms()
-
 import numpy as np
-from scipy.ndimage import gaussian_filter, rotate
+from scipy.ndimage import gaussian_filter
 import os
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-# random rotation matrix generator (for rotating the base object)
-def _random_rotation_matrix():
+def _random_rotation_matrix() -> np.ndarray:
+    """Return a uniformly random 3x3 rotation matrix via QR decomposition."""
     A = np.random.randn(3, 3)
     Q, _ = np.linalg.qr(A)
     if np.linalg.det(Q) < 0:
@@ -75,69 +12,83 @@ def _random_rotation_matrix():
     return Q
 
 
-def _make_playdoh_base(volume_size, base_att=0.1):
-    half = np.array(volume_size) / 2
+def _make_internal_texture(volume_size: tuple, mask: np.ndarray,
+                           X: np.ndarray, Y: np.ndarray, Z: np.ndarray,
+                           base_att: float = 0.1) -> np.ndarray:
+    R = np.sqrt(X**2 + Y**2 + Z**2)   # normalised radius from centre
+
+    # 1. Outer shell: sigmoid-shaped boost near the surface
+    shell_thickness = np.random.uniform(0.15, 0.25)
+    shell_att_boost = np.random.uniform(0.02, 0.05)
+    shell = shell_att_boost / (1.0 + np.exp(-30.0 * (R - (1.0 - shell_thickness))))
+
+    # 2. Central core: lower attenuation (apple core / orange pith)
+    core_radius   = np.random.uniform(0.10, 0.20)
+    core_att_drop = np.random.uniform(0.03, 0.06)
+    core = -core_att_drop / (1.0 + np.exp(40.0 * (R - core_radius)))
+
+    # 3. Large-scale smooth spatial variation in the flesh
+    low_freq = gaussian_filter(np.random.randn(*volume_size), sigma=12)
+    low_freq /= np.max(np.abs(low_freq)) + 1e-8
+    flesh_variation = np.random.uniform(0.008, 0.018) * low_freq
+
+    # 4. Radial fibrous / segment structure
+    n_segments  = np.random.randint(6, 12)
+    phi_offset  = np.random.uniform(0, 2 * np.pi)
+    theta       = np.arctan2(Y, X) + phi_offset
+    fibre_strength = np.random.uniform(0.004, 0.010)
+    flesh_weight   = np.exp(-((R - 0.5) ** 2) / (2 * 0.2 ** 2))
+    fibres = fibre_strength * np.cos(n_segments * theta) * flesh_weight
+
+    # 5. Fine-scale noise
+    fine_noise = np.random.normal(0, 0.005, volume_size)
+
+    texture = base_att + shell + core + flesh_variation + fibres + fine_noise
+    texture = np.clip(texture, 0, None)
+    texture *= mask.astype(float)
+
+    return texture
+
+
+def _make_playdoh_base(volume_size: tuple, base_att: float = 0.1):
 
     xs = np.linspace(-1, 1, volume_size[0])
     ys = np.linspace(-1, 1, volume_size[1])
     zs = np.linspace(-1, 1, volume_size[2])
     X, Y, Z = np.meshgrid(xs, ys, zs, indexing='ij')
 
-    # --- 1. Base ellipsoid (smooth core shape) ---
+    # Random rotation so each phantom has a different orientation
+    R = _random_rotation_matrix()
+    Xr = R[0, 0]*X + R[0, 1]*Y + R[0, 2]*Z
+    Yr = R[1, 0]*X + R[1, 1]*Y + R[1, 2]*Z
+    Zr = R[2, 0]*X + R[2, 1]*Y + R[2, 2]*Z
+
+    # Deformed ellipsoid boundary
     a, b, c = np.random.uniform(0.6, 0.9, 3)
-    ellipsoid = (X/a)**2 + (Y/b)**2 + (Z/c)**2
+    ellipsoid = (Xr/a)**2 + (Yr/b)**2 + (Zr/c)**2
 
-    # --- 2. Add smooth deformation (this is the magic) ---
-    noise = gaussian_filter(np.random.randn(*volume_size), sigma=8)
-    noise = noise / (np.max(np.abs(noise)) + 1e-8)
+    # Smooth low-frequency deformation for organic boundary
+    deform = gaussian_filter(np.random.randn(*volume_size), sigma=8)
+    deform /= np.max(np.abs(deform)) + 1e-8
+    field = ellipsoid + np.random.uniform(0.15, 0.35) * deform
 
-    # control how "blobby" it is
-    deformation_strength = np.random.uniform(0.15, 0.35)
+    # Binary mask with smoothed edges
+    mask = gaussian_filter((field <= 1.0).astype(float), sigma=2) > 0.5
 
-    field = ellipsoid + deformation_strength * noise
-
-    # --- 3. Threshold to get shape ---
-    mask = field <= 1.0
-
-    # --- 4. Smooth edges ---
-    mask = gaussian_filter(mask.astype(float), sigma=2)
-    mask = mask > 0.5
-
-    # --- 5. Add slight surface texture ---
-    base = mask.astype(float) * base_att
-    fine_noise = np.random.normal(0, 0.01, volume_size)
-    base += fine_noise * mask
+    # Internal texture using rotated coords for anatomical consistency
+    base = _make_internal_texture(volume_size, mask, Xr, Yr, Zr, base_att)
 
     return base, mask
 
-# ---------------------------------------------------------------------------
+
 # Rough ellipsoid stone
-# ---------------------------------------------------------------------------
 
-def _make_rough_ellipsoid_stone(volume_size, center, radii, stone_att=0.5,
-                                roughness_amplitude=0.25, roughness_freq=3):
-    """
-    Create a stone mask as a rough ellipsoid.
-
-    Roughness is implemented by modulating the ellipsoid boundary with
-    a smooth low-frequency 3-D sinusoidal perturbation (Perlin-lite):
-    for each voxel (x, y, z) the "radius fraction"
-
-        r = sqrt((dx/a)^2 + (dy/b)^2 + (dz/c)^2)
-
-    is compared to a threshold
-
-        thresh = 1 + A * sin(f*dx/a + φx) * sin(f*dy/b + φy) * sin(f*dz/c + φz)
-
-    so the boundary ripples inward and outward.
-
-    Parameters
-    ----------
-    center       : (px, py, pz) in voxel coordinates
-    radii        : (sa, sb, sc) semi-axes in voxels
-    roughness_amplitude : fraction of radius to perturb (0 = smooth ellipsoid)
-    roughness_freq      : spatial frequency of surface ripple
-    """
+def _make_rough_ellipsoid_stone(volume_size: tuple,
+                                center: tuple,
+                                radii: tuple,
+                                stone_att: float = 0.5,
+                                roughness_amplitude: float = 0.25,
+                                roughness_freq: float = 3.0) -> np.ndarray:
     half = np.array(volume_size) / 2
     xs = np.arange(volume_size[0]) - half[0]
     ys = np.arange(volume_size[1]) - half[1]
@@ -153,77 +104,42 @@ def _make_rough_ellipsoid_stone(volume_size, center, radii, stone_att=0.5,
 
     r = np.sqrt(dx**2 + dy**2 + dz**2)
 
-    # Random phase offsets for the ripple
     phi = np.random.uniform(0, 2 * np.pi, 3)
     ripple = (
         np.sin(roughness_freq * dx + phi[0]) *
         np.sin(roughness_freq * dy + phi[1]) *
         np.sin(roughness_freq * dz + phi[2])
     )
-    # Normalise ripple to [-1, 1] and scale
-    ripple_max = np.max(np.abs(ripple)) + 1e-8
-    ripple = ripple / ripple_max
+    ripple /= np.max(np.abs(ripple)) + 1e-8
 
-    threshold = 1.0 + roughness_amplitude * ripple
-
-    stone_mask = r <= threshold
+    stone_mask = r <= (1.0 + roughness_amplitude * ripple)
     return stone_mask.astype(float) * stone_att
 
 
-# ---------------------------------------------------------------------------
-# Main phantom generator
-# ---------------------------------------------------------------------------
 
-def generate_phantom(volume_size=(128, 128, 128),
-                     num_stones=0,
-                     base_att=0.1,
-                     stone_att=0.5):
-    """
-    Generate a single phantom volume.
-
-    Base object : corner-cut rotated cube (Play-Doh style, per Section 4.8).
-    Stones      : rough ellipsoids (ellipsoid + low-freq surface ripple).
-
-    Parameters
-    ----------
-    volume_size : (int, int, int)
-    num_stones  : number of stone inclusions
-    base_att    : attenuation value for base object
-    stone_att   : attenuation value for stone(s)
-
-    Returns
-    -------
-    phantom : np.ndarray of shape volume_size, dtype float64
-    """
+def generate_phantom(volume_size: tuple = (128, 128, 128),
+                     num_stones: int = 0,
+                     base_att: float = 0.1,
+                     stone_att: float = 0.5) -> np.ndarray:
     base, base_mask = _make_playdoh_base(volume_size, base_att=base_att)
 
-    half = np.array(volume_size) / 2
-    cube_half = half * 0.5   # same as used inside _make_corner_cut_base
+    half     = np.array(volume_size) / 2
+    cube_half = half * 0.5
 
     stones = np.zeros(volume_size)
     for _ in range(num_stones):
-        # Place stone at a random position inside the (unrotated) cube core.
-        # We accept positions whose ellipsoidal distance to the centre < 0.75
-        # to avoid stones poking out of the base.
         for _attempt in range(200):
             px = np.random.uniform(-cube_half[0] * 0.75, cube_half[0] * 0.75)
             py = np.random.uniform(-cube_half[1] * 0.75, cube_half[1] * 0.75)
             pz = np.random.uniform(-cube_half[2] * 0.75, cube_half[2] * 0.75)
-            # Check that the centre voxel is inside the base
-            ix = int(px + half[0])
-            iy = int(py + half[1])
-            iz = int(pz + half[2])
-            ix = np.clip(ix, 0, volume_size[0] - 1)
-            iy = np.clip(iy, 0, volume_size[1] - 1)
-            iz = np.clip(iz, 0, volume_size[2] - 1)
+            ix = int(np.clip(px + half[0], 0, volume_size[0] - 1))
+            iy = int(np.clip(py + half[1], 0, volume_size[1] - 1))
+            iz = int(np.clip(pz + half[2], 0, volume_size[2] - 1))
             if base_mask[ix, iy, iz]:
                 break
 
-        # Stone radii: 5–15 voxels (matching paper's 3–11 mm at ~1 mm/voxel)
         sa, sb, sc = np.random.uniform(5, 15, 3)
-
-        # Surface roughness: amplitude 20–35 % of radius, freq 2–5
-        amp = np.random.uniform(0.20, 0.35)
+        amp  = np.random.uniform(0.20, 0.35)
         freq = np.random.uniform(2, 5)
 
         stone = _make_rough_ellipsoid_stone(
@@ -234,27 +150,14 @@ def generate_phantom(volume_size=(128, 128, 128),
         )
         stones += stone
 
-    phantom = base + stones
-    return phantom
+    return base + stones
 
 
-# ---------------------------------------------------------------------------
-# Batch generator — matches paper's dataset exactly
-# ---------------------------------------------------------------------------
 
-def generate_all_phantoms(output_dir='phantoms', volume_size=(128, 128, 128)):
-    """
-    Generate 111 phantoms with the exact stone distribution from the paper:
-      3  objects with 3 stones
-      35 objects with 2 stones
-      62 objects with 1 stone
-      11 objects with 0 stones
-    Total: 111 phantoms  (indices 000-110)
-    """
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+def generate_all_phantoms(output_dir: str = 'phantoms',
+                          volume_size: tuple = (128, 128, 128)) -> None:
+    os.makedirs(output_dir, exist_ok=True)
 
-    # Exact distribution from the paper (Section 4.1)
     num_stones_list = [3] * 3 + [2] * 35 + [1] * 62 + [0] * 11
     np.random.shuffle(num_stones_list)
 
@@ -264,7 +167,7 @@ def generate_all_phantoms(output_dir='phantoms', volume_size=(128, 128, 128)):
         np.save(out_path, phantom)
         print(f'Saved phantom_{i:03d}.npy  |  stones: {num_stones}')
 
-    print(f'\nDone — {len(num_stones_list)} phantoms saved to "{output_dir}/"')
+    print(f'\nDone. {len(num_stones_list)} phantoms saved to "{output_dir}/"')
 
 
 if __name__ == '__main__':

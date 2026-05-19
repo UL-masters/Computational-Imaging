@@ -2,14 +2,8 @@ import astra
 import matplotlib.pyplot as plt
 import numpy as np
 
-# parallel-beam geometry parameters
-DETECTOR_SPACING = 1.0   # mm per detector pixel
-
+DETECTOR_SPACING = 1.0
 SIRT_ITERATIONS = 100
-
-# ----------------------------------------------------------------------------
-# Geometry helpers
-# ----------------------------------------------------------------------------
 
 # makes a parallel-beam geometry for a given image size and angle set
 def make_parallel_geom(size: int, angles: np.ndarray) -> tuple:
@@ -67,9 +61,6 @@ def add_noise(sinogram: np.ndarray, noise_fraction: float) -> np.ndarray:
     return sinogram + noise
 
 
-# ---------------------------------------------------------------------------
-# Reconstruction algorithms (FBP and SIRT)
-# ---------------------------------------------------------------------------
 
 # reconstruct a single slice with FBP using ASTRA
 def reconstruct_fbp(sinogram: np.ndarray, angles: np.ndarray) -> np.ndarray:
