@@ -1,6 +1,7 @@
 import astra
 import matplotlib.pyplot as plt
 import numpy as np
+from skimage.restoration import denoise_tv_chambolle
 
 DETECTOR_SPACING = 1.0
 SIRT_ITERATIONS = 100
@@ -83,6 +84,7 @@ def reconstruct_fbp(sinogram: np.ndarray, angles: np.ndarray) -> np.ndarray:
     astra.algorithm.run(alg_id)
 
     reconstruction = astra.data2d.get(rec_id)
+    reconstruction = np.clip(reconstruction, 0, None)  # suppress filter ringing artefacts
 
     astra.algorithm.delete(alg_id)
     astra.data2d.delete(rec_id)
@@ -119,6 +121,44 @@ def reconstruct_sirt(sinogram: np.ndarray, angles: np.ndarray, iterations: int =
 
     return reconstruction
 
+# SIRT with TV regularization is not available as a built-in ASTRA algorithm, so we implement it manually by alternating SIRT updates with TV denoising steps
+# after each SIRT iteration, apply a TV proximal step to suppress noise and streak artefacts while preserving stone boundaries 
+def reconstruct_sirt_tv(sinogram: np.ndarray, angles: np.ndarray, iterations: int = SIRT_ITERATIONS, lam: float = 0.01) -> np.ndarray:
+    
+    size = sinogram.shape[1]
+    vol_geom, proj_geom = make_parallel_geom(size, angles)
+    proj_id = astra.create_projector("line", proj_geom, vol_geom)
+    sino_id = astra.data2d.create("-sino", proj_geom, data=sinogram)
+    rec_id  = astra.data2d.create("-vol",  vol_geom)
+
+    # initialise reconstruction to zero
+    current = np.zeros((size, size))
+
+    for _ in range(iterations):
+        # --- one SIRT update ---
+        # write current estimate into ASTRA volume object
+        astra.data2d.store(rec_id, current)
+
+        # run exactly one SIRT iteration
+        cfg = astra.astra_dict("SIRT")
+        cfg["ProjectorId"]          = proj_id
+        cfg["ProjectionDataId"]     = sino_id
+        cfg["ReconstructionDataId"] = rec_id
+        alg_id = astra.algorithm.create(cfg)
+        astra.algorithm.run(alg_id, 1)
+        astra.algorithm.delete(alg_id)
+
+        current = astra.data2d.get(rec_id)
+
+        # --- TV proximal step ---
+        current = denoise_tv_chambolle(current, weight=lam)
+
+    astra.data2d.delete(rec_id)
+    astra.data2d.delete(sino_id)
+    astra.projector.delete(proj_id)
+
+    return current
+
 # compute parallel-beam sinograms for every Z-slice of a 3D phantom, with optional noise
 def sinogram_volume(phantom: np.ndarray, angles: np.ndarray, noise_fraction: float = 0.0) -> np.ndarray:
    
@@ -149,6 +189,15 @@ def reconstruct_volume_sirt(sinograms: np.ndarray, angles: np.ndarray, iteration
     volume = np.zeros((num_slices, size, size))
     for z in range(num_slices):
         volume[z] = reconstruct_sirt(sinograms[z], angles, iterations)
+    return volume
+
+#  reconstruct every slice of a 3D volume with SIRT-TV regularization, which can help suppress noise and artefacts in challenging conditions like few angles + high noise
+def reconstruct_volume_sirt_tv(sinograms: np.ndarray, angles: np.ndarray, iterations: int = SIRT_ITERATIONS, lam: float = 0.01) -> np.ndarray:
+    num_slices = sinograms.shape[0]
+    size = sinograms.shape[2]
+    volume = np.zeros((num_slices, size, size))
+    for z in range(num_slices):
+        volume[z] = reconstruct_sirt_tv(sinograms[z], angles, iterations, lam)
     return volume
 
 

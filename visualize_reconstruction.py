@@ -3,7 +3,7 @@ import os
 import astra
 import matplotlib.pyplot as plt
 import numpy as np
-from reconstruct import sinogram_volume, reconstruct_volume_fbp, reconstruct_volume_sirt, rmse, SIRT_ITERATIONS
+from reconstruct import sinogram_volume, reconstruct_volume_fbp, reconstruct_volume_sirt, reconstruct_volume_sirt_tv, rmse, SIRT_ITERATIONS
 
 
 # angle sets to compare
@@ -26,9 +26,12 @@ OUTPUT_DIR = "results"
 # Visualisation helpers
 # ---------------------------------------------------------------------------
 
-# extract the middle slice from a 3D volume for visualisation
-def _middle_slice(volume: np.ndarray) -> np.ndarray:
-    return volume[volume.shape[0] // 2]
+# extract the peak slice from a 3D volume for visualisation
+def peak_slice(volume: np.ndarray) -> np.ndarray:
+    """Return the slice with the highest total attenuation (most likely to contain a stone)."""
+    slice_sums = volume.sum(axis=(1, 2))
+    peak_z = int(np.argmax(slice_sums))
+    return volume[peak_z]
 
 # helper to save a figure to OUTPUT_DIR with a consistent naming scheme, and display it
 def show_and_save(fig, tag: str, phantom_number: str) -> None:
@@ -49,7 +52,7 @@ def plot_sinogram_comparison(sinograms_dict: dict, phantom_number: str) -> None:
         axes = [axes]
 
     for ax, (label, sinos) in zip(axes, sinograms_dict.items()):
-        mid_z = sinos.shape[0] // 2
+        mid_z = int(np.argmax(sinos.sum(axis=(1, 2))))  # replace sinos.shape[0] // 2
         ax.imshow(sinos[mid_z], cmap="gray", aspect="auto")
         ax.set_title(label, fontsize=9)
         ax.set_xlabel("Detector pixel")
@@ -64,38 +67,73 @@ def plot_reconstruction_grid(phantom: np.ndarray, results: dict, phantom_number:
 
     settings = list(results.keys())
     n_rows = len(settings)
-    fig, axes = plt.subplots(n_rows, 3, figsize=(12, 4 * n_rows))
+    fig, axes = plt.subplots(n_rows, 4, figsize=(16, 4 * n_rows))
     if n_rows == 1:
         axes = axes[np.newaxis, :]
 
-    orig_slice = _middle_slice(phantom)
+    orig_slice = peak_slice(phantom)
     vmin, vmax = orig_slice.min(), orig_slice.max()
 
     for row, setting in enumerate(settings):
         res = results[setting]
 
-        # Original
+        # Original 
         axes[row, 0].imshow(orig_slice, cmap="gray", vmin=vmin, vmax=vmax)
-        axes[row, 0].set_title("Original" if row == 0 else "")
+        if row == 0:
+            axes[row, 0].set_title("Original", fontsize=10, fontweight="bold")
+        axes[row, 0].set_ylabel(setting, fontsize=7)
         axes[row, 0].axis("off")
 
         # FBP
-        fbp_slice = _middle_slice(res["fbp"])
+        fbp_slice = peak_slice(res["fbp"])
         axes[row, 1].imshow(fbp_slice, cmap="gray", vmin=vmin, vmax=vmax)
-        axes[row, 1].set_title(
-            f"FBP  RMSE={res['rmse_fbp']:.4f}\n{setting}", fontsize=8
-        )
+        if row == 0:
+            axes[row, 1].set_title("FBP", fontsize=10, fontweight="bold")
         axes[row, 1].axis("off")
+        axes[row, 1].annotate(
+            f"RMSE={res['rmse_fbp']:.4f}",
+            xy=(0.5, -0.02), xycoords="axes fraction",
+            ha="center", va="top", fontsize=8
+        )
 
         # SIRT
-        sirt_slice = _middle_slice(res["sirt"])
+        sirt_slice = peak_slice(res["sirt"])
         axes[row, 2].imshow(sirt_slice, cmap="gray", vmin=vmin, vmax=vmax)
-        axes[row, 2].set_title(
-            f"SIRT ({SIRT_ITERATIONS} it)  RMSE={res['rmse_sirt']:.4f}\n{setting}", fontsize=8
-        )
+        if row == 0:
+            axes[row, 2].set_title(f"SIRT ({SIRT_ITERATIONS} it)", fontsize=10, fontweight="bold")
         axes[row, 2].axis("off")
+        axes[row, 2].annotate(
+            f"RMSE={res['rmse_sirt']:.4f}",
+            xy=(0.5, -0.02), xycoords="axes fraction",
+            ha="center", va="top", fontsize=8
+        )
 
-    fig.suptitle(f"Reconstruction comparison — Phantom {phantom_number}", fontsize=12)
+        # SIRT-TV
+        sirt_tv_slice = peak_slice(res["sirt_tv"])
+        axes[row, 3].imshow(sirt_tv_slice, cmap="gray", vmin=vmin, vmax=vmax)
+        if row == 0:
+            axes[row, 3].set_title(f"SIRT-TV ({SIRT_ITERATIONS} it)", fontsize=10, fontweight="bold")
+        axes[row, 3].axis("off")
+        axes[row, 3].annotate(
+            f"RMSE={res['rmse_sirt_tv']:.4f}",
+            xy=(0.5, -0.02), xycoords="axes fraction",
+            ha="center", va="top", fontsize=8
+        )
+
+        # condition label on the left of each row
+        axes[row, 0].axis("off")
+        axes[row, 0].annotate(
+            setting,
+            xy=(-0.05, 0.5), xycoords="axes fraction",
+            ha="right", va="center", fontsize=7, rotation=0
+        )
+
+    fig.suptitle(
+        f"Reconstruction comparison — Phantom {phantom_number}",
+        fontsize=13,
+        fontweight="bold",
+        y=1.01
+    )
     fig.tight_layout()
     show_and_save(fig, "reconstructions", phantom_number)
 
@@ -142,17 +180,23 @@ def run_experiment(phantom: np.ndarray, phantom_number: str) -> None:
 
         print(f"  Reconstructing with SIRT ({SIRT_ITERATIONS} iterations) …")
         sirt_vol = reconstruct_volume_sirt(sinos, angles)
+        
+        print(f"  Reconstructing with SIRT-TV({SIRT_ITERATIONS} iterations) …")
+        sirt_tv_vol = reconstruct_volume_sirt_tv(sinos, angles)
 
         err_fbp  = rmse(phantom, fbp_vol)
         err_sirt = rmse(phantom, sirt_vol)
-        print(f"  RMSE  FBP={err_fbp:.4f}  SIRT={err_sirt:.4f}")
+        err_sirt_tv = rmse(phantom, sirt_tv_vol)
+        print(f"  RMSE  FBP={err_fbp:.4f}  SIRT={err_sirt:.4f}  SIRT-TV={err_sirt_tv:.4f}")
 
         sinograms_for_plot[label] = sinos
         results[label] = {
             "fbp": fbp_vol,
             "sirt": sirt_vol,
+            "sirt_tv": sirt_tv_vol,
             "rmse_fbp": err_fbp,
             "rmse_sirt": err_sirt,
+            "rmse_sirt_tv": err_sirt_tv,
         }
 
     print("\nGenerating sinogram figure …")
@@ -164,7 +208,7 @@ def run_experiment(phantom: np.ndarray, phantom_number: str) -> None:
 # main function to load a phantom and run the experiment pipeline
 def main():
     # specify phantom
-    phantom_path = "phantoms/phantom_089.npy"   # path to phantom .npy file
+    phantom_path = "phantoms/phantom_009.npy"   # path to phantom .npy file
 
     # load phantom 
     print(f"Loading {phantom_path} …")
