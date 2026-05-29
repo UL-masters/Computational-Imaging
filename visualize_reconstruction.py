@@ -208,7 +208,7 @@ def run_experiment(phantom: np.ndarray, phantom_number: str) -> None:
 # main function to load a phantom and run the experiment pipeline
 def main():
     # specify phantom
-    phantom_path = "phantoms/phantom_009.npy"   # path to phantom .npy file
+    phantom_path = "phantoms/phantom_020.npy"   # path to phantom .npy file
 
     # load phantom 
     print(f"Loading {phantom_path} …")

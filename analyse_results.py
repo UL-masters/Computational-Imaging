@@ -17,7 +17,7 @@ ALG_COLORS = {
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 
-
+# read the CSV file with results and print some basic info about the dataset
 df = pd.read_csv(INPUT_CSV)
 print(f"Loaded {len(df)} rows from {INPUT_CSV}")
 print(df[["algorithm", "n_angles", "noise"]].drop_duplicates().to_string(index=False))
@@ -26,6 +26,7 @@ print(df[["algorithm", "n_angles", "noise"]].drop_duplicates().to_string(index=F
 
 fig, ax = plt.subplots(figsize=(7, 5))
 
+# plot all points with some transparency to show density, and use different colors for each algorithm
 for alg, grp in df.groupby("algorithm"):
     ax.scatter(
         grp["rmse"], grp["dice"],
@@ -33,6 +34,7 @@ for alg, grp in df.groupby("algorithm"):
         alpha=0.55, s=30, label=alg, edgecolors="none",
     )
 
+# highlight the "hard" cases with a star marker and black edge
 hard = df[(df["n_angles"] == 10) & (df["noise"] == 0.05)]
 for alg, grp in hard.groupby("algorithm"):
     ax.scatter(
@@ -54,7 +56,7 @@ plt.close(fig)
 print(f"Saved {path}")
 
 
-
+# compute Pearson correlation between RMSE and Dice score for each algorithm and condition
 def condition_group(row):
     if row["n_angles"] >= 90 and row["noise"] <= 0.01:
         return "easy"
@@ -65,6 +67,7 @@ def condition_group(row):
 
 df["condition"] = df.apply(condition_group, axis=1)
 
+# compute correlation for each algorithm and condition, and store results in a new DataFrame for display
 rows = []
 for alg in df["algorithm"].unique():
     for cond in ["easy", "medium", "hard", "all"]:
@@ -81,6 +84,7 @@ for alg in df["algorithm"].unique():
             "p-value": f"{p:.3f}" if not np.isnan(p) else "—",
         })
 
+# create a DataFrame for the correlation results and print it in a nice format
 corr_df = pd.DataFrame(rows)
 print("\nCorrelation table:")
 print(corr_df.to_string(index=False))
@@ -97,10 +101,12 @@ table.auto_set_font_size(False)
 table.set_fontsize(10)
 table.scale(1, 1.6)
 
+# style the header row with a dark background and white bold text
 for j in range(len(corr_df.columns)):
     table[0, j].set_facecolor("#2c3e50")
     table[0, j].set_text_props(color="white", fontweight="bold")
 
+# color the rows based on the algorithm, alternating between two light colors for better readability
 alg_list = corr_df["Algorithm"].unique()
 palette  = ["#f0f4f8", "#dbe8f5"]
 for i, row in corr_df.iterrows():
@@ -123,6 +129,7 @@ print(f"Saved {path}")
 angle_counts = sorted(df["n_angles"].unique())
 noise_levels = sorted(df["noise"].unique())
 
+# helper function to create 2D arrays for heatmaps of RMSE and Dice score by angle count and noise level
 def make_heatmap_arrays(df_sub, metric):
     arr = np.zeros((len(angle_counts), len(noise_levels)))
     for i, na in enumerate(angle_counts):
@@ -132,6 +139,7 @@ def make_heatmap_arrays(df_sub, metric):
     return arr
 
 
+# create heatmaps comparing SIRT and SIRT-TV for RMSE and Dice score across all conditions
 for metric, cmap, title_suffix in [
     ("rmse", "Reds",   "RMSE (lower is better)"),
     ("dice", "Greens", "Dice score (higher is better)"),

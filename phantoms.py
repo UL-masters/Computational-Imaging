@@ -15,6 +15,7 @@ def _random_rotation_matrix() -> np.ndarray:
 def _make_internal_texture(volume_size: tuple, mask: np.ndarray,
                            X: np.ndarray, Y: np.ndarray, Z: np.ndarray,
                            base_att: float = 0.1) -> np.ndarray:
+    
     R = np.sqrt(X**2 + Y**2 + Z**2)   # normalised radius from centre
 
     # 1. Outer shell: sigmoid-shaped boost near the surface
