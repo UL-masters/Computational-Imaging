@@ -114,9 +114,9 @@ for i, row in corr_df.iterrows():
     for j in range(len(corr_df.columns)):
         table[i + 1, j].set_facecolor(color)
 
-ax.set_title(
+fig.suptitle(
     "Pearson correlation between RMSE and Dice score",
-    fontsize=11, pad=12,
+    fontsize=11, y=1.02,
 )
 fig.tight_layout()
 path = os.path.join(OUTPUT_DIR, "correlation_table.png")
