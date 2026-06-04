@@ -32,9 +32,17 @@ Generates 111 phantoms into `phantoms/`
 
 ### 2. Visualize a phantom
 ```bash
-python visualize_phantom.py --phantom phantoms/phantom_009.npy
+python visualize_phantom.py --phantom phantoms/phantom_000.npy
 ```
-Change `phantom_009.npy` to any phantom. Saves to `results/`.
+Change `phantom_000.npy` to any of the 111 phantoms. Saves to `phantoms_overview/`.
+
+### 3. Visualize Reconstruction of a Phantom
+
+```bash
+python visualize_reconstruction.py --phantom phantoms/phantom_000.npy
+```
+
+Change `phantom_000.npy` to any of the 111 phantoms. Saves to `results/`.
 
 ### 3. Run experiments
 
