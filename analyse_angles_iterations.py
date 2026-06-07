@@ -1,19 +1,3 @@
-"""
-analyse_sweep_and_iterations.py
---------------------------------
-Produces plots for Subquestions 1 and 3:
-
-  Q1 — Angle sweep 
-       - Line plot: RMSE vs number of angles (FBP vs SIRT)
-       - Line plot: Dice score vs number of angles (FBP vs SIRT)
-
-  Q3 — SIRT iteration convergence 
-       - Line plot: RMSE vs iteration count (log x-axis)
-       - Line plot: Dice score vs iteration count (log x-axis)
-
-All lines show the mean across phantoms; shaded bands show ±1 std.
-"""
-
 import os
 import numpy as np
 import pandas as pd
@@ -30,8 +14,7 @@ ALG_COLORS = {
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def plot_metric_with_std(ax, df, x_col, metric, group_col, colors,
-                         x_label, y_label, title, log_x=False):
+def plot_metric_with_std(ax, df, x_col, metric, group_col, colors, x_label, y_label, title, log_x=False):
     """
     Plot mean +/- std of `metric` against `x_col`, grouped by `group_col`.
     Each group gets its own line and shaded band.

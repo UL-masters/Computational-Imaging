@@ -1,8 +1,3 @@
-"""
-Evaluates reconstruction quality as a function of SIRT iteration count to
-find the point of diminishing returns.
-"""
-
 import os
 import glob
 import numpy as np
@@ -14,26 +9,19 @@ from reconstruct import (
 )
 from experiment_grid import has_stone, load_phantoms
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 PHANTOMS_DIR = "phantoms"
 OUTPUT_DIR   = "results"
 OUTPUT_CSV   = os.path.join(OUTPUT_DIR, "sirt_iterations_results.csv")
 
-N_PHANTOMS   = 20
+N_PHANTOMS   = 20 # only a subset of phantoms to speed up the experiments 
 
 # Best-performing condition from the grid: many angles, no noise
 N_ANGLES     = 180
 NOISE        = 0.00
 
-# Iteration counts to evaluate — sparse at first, then finer near convergence
+# Iteration counts to evaluate: sparse at first, then finer near convergence
 ITERATION_COUNTS = [5, 10, 25, 50, 100, 200, 500]
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 

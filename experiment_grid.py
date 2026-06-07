@@ -16,7 +16,7 @@ PHANTOMS_DIR  = "phantoms"
 OUTPUT_DIR    = "results"
 OUTPUT_CSV    = os.path.join(OUTPUT_DIR, "grid_results.csv")
 
-N_PHANTOMS = 20
+N_PHANTOMS = 20 # only a subset of phantoms to speed up the experiments
 
 ANGLE_COUNTS  = [10, 30, 90, 180]
 NOISE_LEVELS  = [0.00, 0.01, 0.05]

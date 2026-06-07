@@ -1,8 +1,3 @@
-"""
-Sweeps the number of projection angles for FBP and SIRT under noiseless
-conditions to identify where reconstruction quality plateaus (Subquestion 1).
-"""
-
 import os
 import glob
 import numpy as np
@@ -16,23 +11,17 @@ from reconstruct import (
 )
 from experiment_grid import has_stone, load_phantoms
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 PHANTOMS_DIR = "phantoms"
 OUTPUT_DIR   = "results"
 OUTPUT_CSV   = os.path.join(OUTPUT_DIR, "angle_sweep_results.csv")
 
-N_PHANTOMS   = 20
-NOISE        = 0.00   # noiseless — isolates the effect of angle count only
+N_PHANTOMS   = 20 # only a subset of phantoms to speed up the experiments
+NOISE        = 0.00   # noiseless: isolates the effect of angle count only
 ALGORITHMS   = ["FBP", "SIRT"]
 
 # Fine-grained sweep as specified in the experimental plan
 ANGLE_COUNTS = [5, 10, 20, 30, 60, 90, 120, 180]
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 def main():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 

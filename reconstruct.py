@@ -8,20 +8,22 @@ DETECTOR_SPACING = 1.0
 SIRT_ITERATIONS  = 100
 
 
-# ---------------------------------------------------------------------------
+# -------------
 # Geometry
-# ---------------------------------------------------------------------------
+# -------------
 
+# create ASTRA geometries for parallel beam CT with the given angles.
 def make_parallel_geom(size: int, angles: np.ndarray) -> tuple:
     vol_geom  = astra.create_vol_geom(size, size)
     proj_geom = astra.create_proj_geom("parallel", DETECTOR_SPACING, size, angles)
     return vol_geom, proj_geom
 
 
-# ---------------------------------------------------------------------------
+# -----------------------------
 # Forward projection & noise
-# ---------------------------------------------------------------------------
+# -----------------------------
 
+# forward project a single 2D slice using ASTRA
 def forward_project(slice_img: np.ndarray, angles: np.ndarray) -> np.ndarray:
     size = slice_img.shape[0]
     vol_geom, proj_geom = make_parallel_geom(size, angles)
@@ -43,14 +45,15 @@ def forward_project(slice_img: np.ndarray, angles: np.ndarray) -> np.ndarray:
     astra.projector.delete(proj_id)
     return sinogram
 
-
+# add Gaussian noise to a sinogram, with noise level proportional to the max value
 def add_noise(sinogram: np.ndarray, noise_fraction: float) -> np.ndarray:
     if noise_fraction == 0.0:
         return sinogram.copy()
     sigma = noise_fraction * sinogram.max()
     return sinogram + np.random.normal(0, sigma, sinogram.shape)
 
-
+# returns a 3D volume of the given size containing a deformed ellipsoid "playdoh" base 
+# with smoothed edges and an internal texture, as well as a binary mask of the base
 def sinogram_volume(phantom: np.ndarray, angles: np.ndarray,
                     noise_fraction: float = 0.0) -> np.ndarray:
     num_slices = phantom.shape[0]
@@ -62,10 +65,11 @@ def sinogram_volume(phantom: np.ndarray, angles: np.ndarray,
     return sinograms
 
 
-# ---------------------------------------------------------------------------
+# ---------------------------
 # Reconstruction algorithms
-# ---------------------------------------------------------------------------
+# ---------------------------
 
+# reconstruct a single 2D slice using ASTRA's FBP implementation
 def reconstruct_fbp(sinogram: np.ndarray, angles: np.ndarray) -> np.ndarray:
     size = sinogram.shape[1]
     vol_geom, proj_geom = make_parallel_geom(size, angles)
@@ -74,8 +78,8 @@ def reconstruct_fbp(sinogram: np.ndarray, angles: np.ndarray) -> np.ndarray:
     rec_id  = astra.data2d.create("-vol",  vol_geom)
 
     cfg = astra.astra_dict("FBP")
-    cfg["ProjectorId"]          = proj_id
-    cfg["ProjectionDataId"]     = sino_id
+    cfg["ProjectorId"] = proj_id
+    cfg["ProjectionDataId"] = sino_id
     cfg["ReconstructionDataId"] = rec_id
     cfg["option"] = {"FilterType": "Ram-Lak"}
     alg_id = astra.algorithm.create(cfg)
@@ -88,9 +92,8 @@ def reconstruct_fbp(sinogram: np.ndarray, angles: np.ndarray) -> np.ndarray:
     astra.projector.delete(proj_id)
     return reconstruction
 
-
-def reconstruct_sirt(sinogram: np.ndarray, angles: np.ndarray,
-                     iterations: int = SIRT_ITERATIONS) -> np.ndarray:
+# reconstruct a single 2D slice using ASTRA's SIRT implementation
+def reconstruct_sirt(sinogram: np.ndarray, angles: np.ndarray, iterations: int = SIRT_ITERATIONS) -> np.ndarray:
     size = sinogram.shape[1]
     vol_geom, proj_geom = make_parallel_geom(size, angles)
     proj_id = astra.create_projector("line", proj_geom, vol_geom)
@@ -98,8 +101,8 @@ def reconstruct_sirt(sinogram: np.ndarray, angles: np.ndarray,
     rec_id  = astra.data2d.create("-vol",  vol_geom)
 
     cfg = astra.astra_dict("SIRT")
-    cfg["ProjectorId"]          = proj_id
-    cfg["ProjectionDataId"]     = sino_id
+    cfg["ProjectorId"] = proj_id
+    cfg["ProjectionDataId"] = sino_id
     cfg["ReconstructionDataId"] = rec_id
     alg_id = astra.algorithm.create(cfg)
     astra.algorithm.run(alg_id, iterations)
@@ -152,43 +155,41 @@ def reconstruct_sirt_tv(sinogram: np.ndarray, angles: np.ndarray,
     return current
 
 
-# ---------------------------------------------------------------------------
+# ------------------------
 # Volume-level wrappers
-# ---------------------------------------------------------------------------
+# ------------------------
 
+# reconstruct an entire 3D volume slice-by-slice using FBP
 def reconstruct_volume_fbp(sinograms: np.ndarray, angles: np.ndarray) -> np.ndarray:
     num_slices = sinograms.shape[0]
-    size       = sinograms.shape[2]
-    volume     = np.zeros((num_slices, size, size))
+    size = sinograms.shape[2]
+    volume = np.zeros((num_slices, size, size))
     for z in range(num_slices):
         volume[z] = reconstruct_fbp(sinograms[z], angles)
     return volume
 
-
-def reconstruct_volume_sirt(sinograms: np.ndarray, angles: np.ndarray,
-                             iterations: int = SIRT_ITERATIONS) -> np.ndarray:
+# reconstruct an entire 3D volume slice-by-slice using SIRT
+def reconstruct_volume_sirt(sinograms: np.ndarray, angles: np.ndarray, iterations: int = SIRT_ITERATIONS) -> np.ndarray:
     num_slices = sinograms.shape[0]
-    size       = sinograms.shape[2]
-    volume     = np.zeros((num_slices, size, size))
+    size = sinograms.shape[2]
+    volume = np.zeros((num_slices, size, size))
     for z in range(num_slices):
         volume[z] = reconstruct_sirt(sinograms[z], angles, iterations)
     return volume
 
-
-def reconstruct_volume_sirt_tv(sinograms: np.ndarray, angles: np.ndarray,
-                                iterations: int = SIRT_ITERATIONS,
-                                lam: float = 0.01) -> np.ndarray:
+# reconstruct an entire 3D volume slice-by-slice using SIRT with TV regularization
+def reconstruct_volume_sirt_tv(sinograms: np.ndarray, angles: np.ndarray, iterations: int = SIRT_ITERATIONS, lam: float = 0.01) -> np.ndarray:
     num_slices = sinograms.shape[0]
-    size       = sinograms.shape[2]
-    volume     = np.zeros((num_slices, size, size))
+    size = sinograms.shape[2]
+    volume = np.zeros((num_slices, size, size))
     for z in range(num_slices):
         volume[z] = reconstruct_sirt_tv(sinograms[z], angles, iterations, lam)
     return volume
 
 
-# ---------------------------------------------------------------------------
+# ----------
 # Metrics
-# ---------------------------------------------------------------------------
+# ----------
 
 def rmse(reference: np.ndarray, reconstruction: np.ndarray) -> float:
     """Root Mean Squared Error over the full 3D volume."""

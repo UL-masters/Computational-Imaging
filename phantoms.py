@@ -24,7 +24,7 @@ def _make_internal_texture(volume_size: tuple, mask: np.ndarray,
     shell = shell_att_boost / (1.0 + np.exp(-30.0 * (R - (1.0 - shell_thickness))))
 
     # 2. Central core: lower attenuation (apple core / orange pith)
-    core_radius   = np.random.uniform(0.10, 0.20)
+    core_radius = np.random.uniform(0.10, 0.20)
     core_att_drop = np.random.uniform(0.03, 0.06)
     core = -core_att_drop / (1.0 + np.exp(40.0 * (R - core_radius)))
 
@@ -36,9 +36,9 @@ def _make_internal_texture(volume_size: tuple, mask: np.ndarray,
     # 4. Radial fibrous / segment structure
     n_segments  = np.random.randint(6, 12)
     phi_offset  = np.random.uniform(0, 2 * np.pi)
-    theta       = np.arctan2(Y, X) + phi_offset
+    theta = np.arctan2(Y, X) + phi_offset
     fibre_strength = np.random.uniform(0.004, 0.010)
-    flesh_weight   = np.exp(-((R - 0.5) ** 2) / (2 * 0.2 ** 2))
+    flesh_weight = np.exp(-((R - 0.5) ** 2) / (2 * 0.2 ** 2))
     fibres = fibre_strength * np.cos(n_segments * theta) * flesh_weight
 
     # 5. Fine-scale noise
@@ -51,6 +51,7 @@ def _make_internal_texture(volume_size: tuple, mask: np.ndarray,
     return texture
 
 
+# Deformed ellipsoid "playdoh" base with organic texture
 def _make_playdoh_base(volume_size: tuple, base_att: float = 0.1):
 
     xs = np.linspace(-1, 1, volume_size[0])
@@ -83,7 +84,6 @@ def _make_playdoh_base(volume_size: tuple, base_att: float = 0.1):
 
 
 # Rough ellipsoid stone
-
 def _make_rough_ellipsoid_stone(volume_size: tuple,
                                 center: tuple,
                                 radii: tuple,
